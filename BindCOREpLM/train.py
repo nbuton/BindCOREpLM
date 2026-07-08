@@ -37,20 +37,20 @@ from config import ExperimentConfig, TrainingConfig
 from dataset import LIPCollator, LABEL_IGNORE_INDEX, build_datasets
 from model import ESMCResidueBindingModel
 
-try:
-    from sklearn.metrics import (
-        precision_recall_fscore_support,
-        matthews_corrcoef,
-        roc_auc_score,
-        roc_curve,
-        precision_recall_curve,
-        auc,
-        average_precision_score,
-    )
+import yaml
+from huggingface_hub import login as hf_login
 
-    _HAS_SKLEARN = True
-except ImportError:
-    _HAS_SKLEARN = False
+from sklearn.metrics import (
+    precision_recall_fscore_support,
+    matthews_corrcoef,
+    roc_auc_score,
+    roc_curve,
+    precision_recall_curve,
+    auc,
+    average_precision_score,
+)
+
+from tqdm import tqdm
 
 
 def set_seed(seed: int) -> None:
@@ -105,7 +105,7 @@ def compute_metrics(
     labels = all_labels[mask]
 
     metrics = {"n_residues": int(mask.sum().item())}
-    if not _HAS_SKLEARN or labels.numel() == 0:
+    if labels.numel() == 0:
         return metrics
 
     labels_np = labels.cpu().numpy()
@@ -234,6 +234,18 @@ def main():
         action="store_true",
         help="Override training.data.combine_train_valid_for_final=True for this run.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show tqdm progress bars and per-batch info during training.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        choices=["cuda", "cpu", "mps"],
+        help="Device to use (overrides auto-detection). Use 'mps' for macOS Metal.",
+    )
     args = parser.parse_args()
 
     cfg = ExperimentConfig.from_yaml(args.config)
@@ -243,7 +255,28 @@ def main():
     train_cfg: TrainingConfig = cfg.training
     set_seed(train_cfg.seed)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # ------------------------------------------------------------------ #
+    # Hugging Face login using API key from data/hg_api_key.yaml
+    # ------------------------------------------------------------------ #
+    hg_api_key_path = os.path.join(
+        os.path.dirname(__file__), "..", "data", "hg_api_key.yaml"
+    )
+    if os.path.exists(hg_api_key_path):
+        with open(hg_api_key_path, "r") as f:
+            hg_api_data = yaml.safe_load(f)
+        hf_token = hg_api_data.get("api_key")
+        if hf_token:
+            hf_login(token=hf_token)
+            print("✅ Logged in to Hugging Face Hub.")
+        else:
+            print("⚠️  No 'api_key' found in data/hg_api_key.yaml")
+    else:
+        print("⚠️  data/hg_api_key.yaml not found – skipping HF login.")
+    # ------------------------------------------------------------------ #
+
+    device = (
+        args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
 
     # ------------------------------------------------------------------ #
     # MLflow setup -- local file tracking
@@ -356,12 +389,27 @@ def main():
     epochs_without_improvement = 0
     global_step = 0
 
+    # Determine verbose from args (we'll store it after parse_args)
+    verbose = getattr(args, "verbose", False)
+
     for epoch in range(1, train_cfg.num_epochs + 1):
         model.train()
         optimizer.zero_grad()
         running_loss = 0.0
 
-        for step, batch in enumerate(train_loader, start=1):
+        # Wrap train loader with tqdm if verbose
+        train_iter = (
+            tqdm(
+                enumerate(train_loader, start=1),
+                total=len(train_loader),
+                desc=f"Epoch {epoch}",
+                unit="batch",
+            )
+            if (verbose)
+            else enumerate(train_loader, start=1)
+        )
+
+        for step, batch in train_iter:
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
@@ -387,10 +435,24 @@ def main():
 
                 if global_step % train_cfg.log_every_n_steps == 0:
                     lr_now = optimizer.param_groups[0]["lr"]
+                    # Print always (but tqdm also shows progress)
+                    if verbose:
+                        # Update tqdm postfix with loss and lr
+                        if isinstance(train_iter, tqdm):
+                            train_iter.set_postfix(
+                                loss=f"{running_loss / step:.4f}", lr=f"{lr_now:.2e}"
+                            )
                     print(
                         f"epoch {epoch} step {global_step} "
                         f"loss={running_loss / step:.4f} lr={lr_now:.2e}"
                     )
+
+            # If verbose, show per-batch info (only without tqdm)
+            if verbose and (step % max(1, train_cfg.log_every_n_steps // 5) == 0):
+                lr_now = optimizer.param_groups[0]["lr"]
+                print(
+                    f"  batch {step}/{len(train_loader)} loss={running_loss / step:.4f} lr={lr_now:.2e}"
+                )
 
         avg_train_loss = running_loss / len(train_loader)
         print(f"== epoch {epoch} done -- avg train loss {avg_train_loss:.4f} ==")

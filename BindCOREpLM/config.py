@@ -40,7 +40,7 @@ class LoRAConfig:
     # this works whether the underlying model calls them "k_proj"/"v_proj",
     # "key"/"value", etc. Check `list_linear_module_names(model)` in
     # lora.py if your checkpoint uses different names.
-    target_modules: List[str] = field(default_factory=lambda: ["k_proj", "v_proj"])
+    target_modules: List[str] = field(default_factory=lambda: ["layernorm_qkv"])
     # Restrict LoRA to a subset of transformer layers (0-indexed).
     # None = apply to every layer. With only 800 proteins, restricting
     # to the last N layers (e.g. list(range(30, 36)) for a 36-layer model)

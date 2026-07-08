@@ -47,7 +47,7 @@ class ESMCResidueBindingModel(nn.Module):
         print(config.model_name_or_path)
         self.backbone = AutoModelForMaskedLM.from_pretrained(
             config.model_name_or_path,
-            torch_dtype=dtype,
+            dtype=dtype,
         )
 
         if config.freeze_base_model:
@@ -63,7 +63,11 @@ class ESMCResidueBindingModel(nn.Module):
 
         if config.gradient_checkpointing:
             if hasattr(self.backbone, "gradient_checkpointing_enable"):
-                self.backbone.gradient_checkpointing_enable()
+                try:
+                    self.backbone.gradient_checkpointing_enable()
+                except ValueError as e:
+                    print(f"⚠️  Gradient checkpointing not supported by backbone: {e}")
+                    print("   Training will proceed without gradient checkpointing.")
 
         hidden_size = self._infer_hidden_size(self.backbone)
 
