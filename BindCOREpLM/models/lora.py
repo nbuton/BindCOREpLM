@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import LoRAConfig
+from BindCOREpLM.config import LoRAConfig
 
 
 class LoRALinear(nn.Module):
@@ -94,12 +94,20 @@ class LoRAFusedQKV(nn.Module):
         self.lora_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
         # LoRA on K slice
-        self.lora_A_k = nn.Parameter(torch.randn(rank, self.hidden_size, dtype=torch.float32))
-        self.lora_B_k = nn.Parameter(torch.zeros(self.hidden_size, rank, dtype=torch.float32))
+        self.lora_A_k = nn.Parameter(
+            torch.randn(rank, self.hidden_size, dtype=torch.float32)
+        )
+        self.lora_B_k = nn.Parameter(
+            torch.zeros(self.hidden_size, rank, dtype=torch.float32)
+        )
 
         # LoRA on V slice
-        self.lora_A_v = nn.Parameter(torch.randn(rank, self.hidden_size, dtype=torch.float32))
-        self.lora_B_v = nn.Parameter(torch.zeros(self.hidden_size, rank, dtype=torch.float32))
+        self.lora_A_v = nn.Parameter(
+            torch.randn(rank, self.hidden_size, dtype=torch.float32)
+        )
+        self.lora_B_v = nn.Parameter(
+            torch.zeros(self.hidden_size, rank, dtype=torch.float32)
+        )
 
         nn.init.kaiming_uniform_(self.lora_A_k, a=math.sqrt(5))
         nn.init.kaiming_uniform_(self.lora_A_v, a=math.sqrt(5))
@@ -109,7 +117,7 @@ class LoRAFusedQKV(nn.Module):
         qkv = self.fused_qkv(x)  # (..., 3*H)
 
         H = self.hidden_size
-        q, k, v = qkv[..., :H], qkv[..., H:2*H], qkv[..., 2*H:]
+        q, k, v = qkv[..., :H], qkv[..., H : 2 * H], qkv[..., 2 * H :]
 
         # Apply LoRA to K and V slices
         x_fp32 = x.to(torch.float32)
@@ -194,8 +202,7 @@ def inject_lora_adapters(model: nn.Module, lora_config: LoRAConfig) -> int:
 
     # --- Phase 2: Wrap fused QKV modules (not nn.Linear, but have 3*H, H weight) ---
     fused_names = list_fused_qkv_module_names(model)
-    fused_targets = {t for t in targets
-                     if "layernorm_qkv" in t or "qkv" in t.lower()}
+    fused_targets = {t for t in targets if "layernorm_qkv" in t or "qkv" in t.lower()}
 
     fused_to_wrap = []
     for name in fused_names:

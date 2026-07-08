@@ -25,12 +25,12 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForMaskedLM
 
-from config import (
+from BindCOREpLM.config import (
     ESMCFineTuneConfig,
     PRECISION_TORCH_DTYPE_NAMES,
     HEAD_PRECISION_TORCH_DTYPE_NAMES,
 )
-from lora import inject_lora_adapters, count_trainable_parameters
+from BindCOREpLM.models.lora import inject_lora_adapters, count_trainable_parameters
 
 _ACTIVATIONS = {
     "gelu": nn.GELU,
@@ -70,7 +70,7 @@ class ESMCResidueBindingModel(nn.Module):
                 try:
                     self.backbone.gradient_checkpointing_enable()
                 except ValueError as e:
-                    print(f"⚠️  Gradient checkpointing not supported by backbone: {e}")
+                    print(f"\u26a0\ufe0f  Gradient checkpointing not supported by backbone: {e}")
                     print("   Training will proceed without gradient checkpointing.")
 
         hidden_size = self._infer_hidden_size(self.backbone)

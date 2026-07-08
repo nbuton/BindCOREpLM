@@ -7,9 +7,10 @@ MCC, F1, Precision, Recall, AUROC, AUPR, Average Precision.
 
 Usage
 -----
-    python evaluate.py --predictions predictions.csv \\
+    python -m BindCOREpLM.inference.evaluate --predictions predictions.csv \\
                        --true_labels data/LIP_dataset/test.txt
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,7 @@ from sklearn.metrics import (
     average_precision_score,
 )
 
-from dataset import parse_lip_file
+from BindCOREpLM.data.dataset import parse_lip_file
 
 
 def load_predictions(path: str) -> dict[str, dict]:
@@ -55,8 +56,6 @@ def load_true_labels(lip_file: str) -> dict[str, list[int]]:
     samples = parse_lip_file(lip_file)
     true_labels = {}
     for pid, seq, labels in samples:
-        # Only keep valid (non-ignore) labels; ignore '-' positions are
-        # excluded from evaluation as they were during training.
         true_labels[pid] = labels
     return true_labels
 
@@ -65,10 +64,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Evaluate BindCOREpLM predictions against ground truth."
     )
-    parser.add_argument("--predictions", type=str, required=True,
-                        help="Path to predictions CSV file")
-    parser.add_argument("--true_labels", type=str, required=True,
-                        help="Path to true labels file in LIP format")
+    parser.add_argument(
+        "--predictions", type=str, required=True, help="Path to predictions CSV file"
+    )
+    parser.add_argument(
+        "--true_labels",
+        type=str,
+        required=True,
+        help="Path to true labels file in LIP format",
+    )
     args = parser.parse_args()
 
     # Load data
@@ -110,8 +114,10 @@ def main():
                 pass
 
     if missing_ids:
-        print(f"Warning: {len(missing_ids)} proteins in true labels not found in predictions: "
-              f"{missing_ids[:5]}...")
+        print(
+            f"Warning: {len(missing_ids)} proteins in true labels not found in predictions: "
+            f"{missing_ids[:5]}..."
+        )
 
     # Now build arrays, ignoring '-' positions. Re-traverse properly:
     all_probs = []
@@ -141,8 +147,10 @@ def main():
         sys.exit(1)
 
     print(f"\nEvaluating on {len(all_true):,} residues across {len(preds)} proteins")
-    print(f"  Positive residues: {all_true.sum():,} / {len(all_true):,} "
-          f"({100 * all_true.mean():.2f}%)")
+    print(
+        f"  Positive residues: {all_true.sum():,} / {len(all_true):,} "
+        f"({100 * all_true.mean():.2f}%)"
+    )
 
     # --- Metrics ---
     # Threshold-based (using binary predictions from optimal threshold)
@@ -175,6 +183,7 @@ def main():
 
     # Also output as JSON for programmatic consumption
     import json
+
     results = {
         "mcc": float(mcc),
         "f1": float(f1),

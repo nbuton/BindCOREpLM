@@ -2,3 +2,10 @@ BindCOREpLM/__pycache__/*
 data/*
 outputs/*
 .DS_Store
+*.egg-info/
+dist/
+build/
+.BindCOREpLM
+env_BindCOREpLM/
+__pycache__/
+

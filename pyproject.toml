@@ -1,0 +1,3 @@
+We need to apply the SUGGESTED EDIT to the ORIGINAL CODE. The ORIGINAL CODE has a [project.scripts] section with four entries. The SUGGESTED EDIT provides replacements for those four entries. We must output the complete modified file, preserving everything else unchanged.
+
+The ORIGINAL CODE:
