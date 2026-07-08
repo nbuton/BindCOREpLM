@@ -1,3 +1,28 @@
-We need to apply the SUGGESTED EDIT to the ORIGINAL CODE. The ORIGINAL CODE has a [project.scripts] section with four entries. The SUGGESTED EDIT provides replacements for those four entries. We must output the complete modified file, preserving everything else unchanged.
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
 
-The ORIGINAL CODE:
+[project]
+name = "BindCOREpLM"
+version = "0.1.0"
+description = "LoRA fine-tuning of ESM-C for residue-level binding-site prediction"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.30",
+    "numpy",
+    "scikit-learn",
+    "tqdm",
+    "mlflow",
+    "pyyaml",
+]
+
+[project.scripts]
+bindcore-train = "BindCOREpLM.training.train:main"
+bindcore-predict = "BindCOREpLM.inference.predict:main"
+bindcore-evaluate = "BindCOREpLM.inference.evaluate:main"
+bindcore-merge-lora = "BindCOREpLM.models.merge_lora:main"
+
+[tool.setuptools.packages.find]
+include = ["BindCOREpLM*"]
