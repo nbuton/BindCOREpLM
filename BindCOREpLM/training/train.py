@@ -79,9 +79,7 @@ def _save_checkpoint(
 ):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     trainable_state = {
-        n: p.data.cpu()
-        for n, p in model.named_parameters()
-        if p.requires_grad
+        n: p.data.cpu() for n, p in model.named_parameters() if p.requires_grad
     }
     trainable_state["_binary_threshold"] = torch.tensor(model.binary_threshold)
     checkpoint = {
@@ -98,7 +96,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train BindCOREpLM with LoRA fine-tuning."
     )
-    parser.add_argument("--config", type=str, required=True, help="Path to experiment config YAML")
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to experiment config YAML"
+    )
     parser.add_argument(
         "--mlflow-tracking-uri",
         type=str,
@@ -110,6 +110,18 @@ def main():
         type=str,
         default="BindCOREpLM",
         help="MLflow experiment name",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output and tqdm progress bars (default: silent)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device to use (cuda, cpu, mps). If not provided, auto-detect.",
     )
     args = parser.parse_args()
 
@@ -127,7 +139,10 @@ def main():
     # ------------------------------------------------------------------ #
     # Device
     # ------------------------------------------------------------------ #
-    if torch.cuda.is_available():
+
+    if args.device is not None:
+        device = torch.device(args.device)
+    elif torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
         device = torch.device("mps")
@@ -265,7 +280,6 @@ def main():
         global_step = 0
 
         for epoch in range(1, train_cfg.num_epochs + 1):
-            model.train()
             epoch_loss = 0.0
             epoch_steps = 0
             pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{train_cfg.num_epochs}")
@@ -287,7 +301,10 @@ def main():
                         trainable_params, train_cfg.max_grad_norm
                     )
                     optimizer.step()
-                    if scheduler is not None and train_cfg.scheduler.name != "reduce_on_plateau":
+                    if (
+                        scheduler is not None
+                        and train_cfg.scheduler.name != "reduce_on_plateau"
+                    ):
                         scheduler.step()
                     optimizer.zero_grad()
 
@@ -315,7 +332,9 @@ def main():
                 all_labels = []
 
                 with torch.no_grad():
-                    for batch in tqdm(valid_loader, desc="Validating"):
+                    for batch in tqdm(
+                        valid_loader, desc="Validating", disable=not args.verbose
+                    ):
                         input_ids = batch["input_ids"].to(device)
                         attention_mask = batch["attention_mask"].to(device)
                         labels = batch["labels"].to(device)
@@ -344,7 +363,9 @@ def main():
                 )
 
                 print(f"  Val loss: {avg_val_loss:.6f}")
-                print(f"  Val F1@{best_thr:.3f}: {val_f1:.4f} (P={val_prec:.4f} R={val_rec:.4f})")
+                print(
+                    f"  Val F1@{best_thr:.3f}: {val_f1:.4f} (P={val_prec:.4f} R={val_rec:.4f})"
+                )
 
                 mlflow.log_metric("val_loss", avg_val_loss, step=epoch)
                 mlflow.log_metric("val_f1", val_f1, step=epoch)
@@ -392,7 +413,9 @@ def main():
                     train_cfg.early_stopping_patience is not None
                     and steps_without_improvement >= train_cfg.early_stopping_patience
                 ):
-                    print(f"\U0001f6a9 Early stopping after {epoch} epochs (no improvement for {steps_without_improvement} epochs)")
+                    print(
+                        f"\U0001f6a9 Early stopping after {epoch} epochs (no improvement for {steps_without_improvement} epochs)"
+                    )
                     break
 
             else:
@@ -421,7 +444,7 @@ def main():
         all_test_labels = []
 
         with torch.no_grad():
-            for batch in tqdm(test_loader, desc="Testing"):
+            for batch in tqdm(test_loader, desc="Testing", disable=not args.verbose):
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["labels"].to(device)
@@ -447,7 +470,9 @@ def main():
         )
 
         print(f"  Test loss: {avg_test_loss:.6f}")
-        print(f"  Test F1@{model.binary_threshold:.3f}: {test_f1:.4f} (P={test_prec:.4f} R={test_rec:.4f})")
+        print(
+            f"  Test F1@{model.binary_threshold:.3f}: {test_f1:.4f} (P={test_prec:.4f} R={test_rec:.4f})"
+        )
 
         mlflow.log_metric("test_loss", avg_test_loss)
         mlflow.log_metric("test_f1", test_f1)
