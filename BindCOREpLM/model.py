@@ -25,7 +25,11 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForMaskedLM
 
-from config import ESMCFineTuneConfig, PRECISION_TORCH_DTYPE_NAMES
+from config import (
+    ESMCFineTuneConfig,
+    PRECISION_TORCH_DTYPE_NAMES,
+    HEAD_PRECISION_TORCH_DTYPE_NAMES,
+)
 from lora import inject_lora_adapters, count_trainable_parameters
 
 _ACTIVATIONS = {
@@ -102,8 +106,9 @@ class ESMCResidueBindingModel(nn.Module):
 
         # CNN branches + head are always trainable, run in fp32 for stability
         # even when the backbone is bf16/fp16.
-        self.cnn_branches.to(torch.float32)
-        self.head.to(torch.float32)
+        _head_dtype = _resolve_dtype(config.head_precision)
+        self.cnn_branches.to(_head_dtype)
+        self.head.to(_head_dtype)
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -160,7 +165,8 @@ class ESMCResidueBindingModel(nn.Module):
 
         # Run the head in fp32 regardless of backbone precision, for
         # numerically stable dropout/CNN/BCE-with-logits.
-        hidden = hidden.to(torch.float32)
+        head_dtype = _resolve_dtype(self.config.head_precision)
+        hidden = hidden.to(head_dtype)
         hidden = self.input_dropout(hidden)
 
         x = hidden.transpose(1, 2)  # (B, H, L) for Conv1d

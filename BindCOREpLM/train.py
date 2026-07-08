@@ -279,6 +279,19 @@ def main():
     )
 
     # ------------------------------------------------------------------ #
+    # MPS (Apple Silicon) warning
+    # ------------------------------------------------------------------ #
+    if device == "mps" and cfg.model.head_precision == "fp32":
+        print(
+            "⚠️  MPS device detected with head_precision='fp32'. "
+            "Validation metrics may produce NaN values due to numerical "
+            "instability of float32 on Apple Silicon.\n"
+            "   Consider setting `head_precision: fp64` in your config YAML "
+            "(model.head_precision) to use float64 for the CNN/MLP head.\n"
+            "   See config.py docstring for details."
+        )
+
+    # ------------------------------------------------------------------ #
     # MLflow setup -- local file tracking
     # ------------------------------------------------------------------ #
     os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"

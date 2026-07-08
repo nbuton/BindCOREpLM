@@ -100,6 +100,12 @@ class ESMCFineTuneConfig:
     # (V100) and lack native bf16 support.
     precision: str = "bf16"
 
+    # Precision for the CNN + MLP head (fp32 or fp64).
+    # Use "fp64" (float64) when running on MPS (Apple Silicon) to avoid
+    # NaN in validation metrics caused by numerical instability of float32
+    # on that platform. Default is "fp32" for speed on CUDA / CPU.
+    head_precision: str = "fp32"
+
     max_seq_length: int = 1024
 
     def __post_init__(self):
@@ -113,6 +119,10 @@ class ESMCFineTuneConfig:
         if self.precision not in ("fp32", "fp16", "bf16"):
             raise ValueError(
                 f"precision must be one of fp32/fp16/bf16, got {self.precision!r}"
+            )
+        if self.head_precision not in ("fp32", "fp64"):
+            raise ValueError(
+                f"head_precision must be one of fp32/fp64, got {self.head_precision!r}"
             )
 
     # ------------------------------------------------------------------ #
@@ -137,6 +147,11 @@ PRECISION_TORCH_DTYPE_NAMES = {
     "fp32": "float32",
     "fp16": "float16",
     "bf16": "bfloat16",
+}
+
+HEAD_PRECISION_TORCH_DTYPE_NAMES = {
+    "fp32": "float32",
+    "fp64": "float64",
 }
 
 
