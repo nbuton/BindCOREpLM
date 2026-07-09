@@ -38,7 +38,7 @@ def load_predictions(path: str) -> dict[str, dict]:
         for row in reader:
             pid = row["protein_id"]
             length = int(row["length"])
-            probs = [float(x) for x in row["predictions"].split(",")]
+            probs = [float(x) for x in row["probabilities"].split(",")]
             binaries = [int(x) for x in row["binary_predictions"].split(",")]
             predictions[pid] = {
                 "length": length,
