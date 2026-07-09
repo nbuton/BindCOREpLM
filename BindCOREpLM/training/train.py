@@ -256,9 +256,12 @@ def main():
         scheduler = None
 
     # ------------------------------------------------------------------ #
-    # MLflow
+    # MLflow  (SQLite backend – compatible with MLflow ≥ 3.13)
     # ------------------------------------------------------------------ #
-    mlflow.set_tracking_uri(args.mlflow_tracking_uri or "file:./mlruns")
+    if args.mlflow_tracking_uri is None:
+        default_db = os.path.join(train_cfg.output_dir, "mlflow.db")
+        args.mlflow_tracking_uri = f"sqlite:///{default_db}"
+    mlflow.set_tracking_uri(args.mlflow_tracking_uri)
     mlflow.set_experiment(args.mlflow_experiment)
 
     with mlflow.start_run() as run:
