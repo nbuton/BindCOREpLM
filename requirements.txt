@@ -1,0 +1,10 @@
+PyYAML
+mlflow
+huggingface_hub
+torch>=2.0
+transformers @ git+https://github.com/biohub/transformers.git
+numpy
+scikit-learn
+tqdm
+mlflow
+pyyaml
