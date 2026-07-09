@@ -170,6 +170,9 @@ def inject_lora_adapters(model: nn.Module, lora_config: LoRAConfig) -> int:
 
     Returns the number of modules wrapped.
     """
+    if lora_config.disable:
+        return 0
+
     targets = set(lora_config.target_modules)
     n_wrapped = 0
 
@@ -227,7 +230,7 @@ def inject_lora_adapters(model: nn.Module, lora_config: LoRAConfig) -> int:
         setattr(parent, child_name, wrapped)
         n_wrapped += 1
 
-    if n_wrapped == 0:
+    if n_wrapped == 0 and targets:
         available_linear = list_linear_module_names(model)
         available_fused = list_fused_qkv_module_names(model)
         raise ValueError(

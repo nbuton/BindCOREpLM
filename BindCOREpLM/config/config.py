@@ -30,6 +30,10 @@ import yaml
 class LoRAConfig:
     """LoRA adapters on the attention K/V projections."""
 
+    # Set to True to skip LoRA entirely — only the frozen backbone +
+    # CNN + MLP head will be used. Useful for ablation studies.
+    disable: bool = False
+
     rank: int = 8
     alpha: int = 16
     # LoRA dropout applied to the *input* of the low-rank path only

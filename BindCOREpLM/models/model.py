@@ -70,7 +70,9 @@ class ESMCResidueBindingModel(nn.Module):
                 try:
                     self.backbone.gradient_checkpointing_enable()
                 except ValueError as e:
-                    print(f"\u26a0\ufe0f  Gradient checkpointing not supported by backbone: {e}")
+                    print(
+                        f"\u26a0\ufe0f  Gradient checkpointing not supported by backbone: {e}"
+                    )
                     print("   Training will proceed without gradient checkpointing.")
 
         hidden_size = self._infer_hidden_size(self.backbone)
@@ -137,6 +139,11 @@ class ESMCResidueBindingModel(nn.Module):
     def trainable_parameter_summary(self) -> str:
         trainable, total = count_trainable_parameters(self)
         pct = 100 * trainable / total if total else 0.0
+        if self.config.lora.disable:
+            return (
+                f"LoRA disabled — training CNN + MLP head only | "
+                f"Trainable params: {trainable:,} / {total:,} ({pct:.3f}%)"
+            )
         return (
             f"LoRA adapters wrapped: {self._n_lora_wrapped} linear layers | "
             f"Trainable params: {trainable:,} / {total:,} ({pct:.3f}%)"
