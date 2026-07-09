@@ -84,7 +84,7 @@ def main():
     true = load_true_labels(args.true_labels)
     print(f"  Found {len(true)} proteins")
 
-    # Build aligned flat arrays
+    # Build aligned flat arrays, ignoring '-' positions in true labels
     all_probs = []
     all_binary = []
     all_true = []
@@ -98,45 +98,20 @@ def main():
         seq_len = min(len(true_labels), len(p["probabilities"]))
         if seq_len == 0:
             continue
-
-        all_probs.extend(p["probabilities"][:seq_len])
-        all_binary.extend(p["binary"][:seq_len])
-        # Filter out ignored positions ('-' in original labels = -100)
-        # We skip those and only evaluate on 0/1 positions
-        trues = true_labels[:seq_len]
-        for t in trues:
-            if t == 0 or t == 1:
-                all_true.append(t)
-            else:
-                # Ignored position -- we still need to remove matching entry
-                # from probs/binary. But we track them here.
-                # Since we're doing residue-level evaluation, skip ignored.
-                pass
-
-    if missing_ids:
-        print(
-            f"Warning: {len(missing_ids)} proteins in true labels not found in predictions: "
-            f"{missing_ids[:5]}..."
-        )
-
-    # Now build arrays, ignoring '-' positions. Re-traverse properly:
-    all_probs = []
-    all_binary = []
-    all_true = []
-
-    for pid, true_labels in true.items():
-        if pid not in preds:
-            continue
-        p = preds[pid]
-        seq_len = min(len(true_labels), len(p["probabilities"]))
-        if seq_len == 0:
-            continue
         for i in range(seq_len):
             t = true_labels[i]
             if t == 0 or t == 1:
                 all_probs.append(p["probabilities"][i])
                 all_binary.append(p["binary"][i])
                 all_true.append(t)
+
+    if missing_ids:
+        print(
+            f"Error: {len(missing_ids)} protein(s) in true labels not found in predictions: "
+            f"{missing_ids[:5]}..."
+        )
+        print("Aborting evaluation — ensure all target proteins have predictions.")
+        sys.exit(1)
 
     all_probs = np.array(all_probs)
     all_binary = np.array(all_binary)
