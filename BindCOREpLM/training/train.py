@@ -76,7 +76,14 @@ def _save_checkpoint(
     step: int,
     metrics: dict,
     path: str,
+    model_config_dict: Optional[dict] = None,
 ):
+    """Save a checkpoint with model weights, optimizer state, and config.
+
+    When ``model_config_dict`` is provided the checkpoint becomes
+    *self-contained* — the model can be fully reconstructed from the
+    ``.pt`` file without a separate YAML config.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
     trainable_state = {
         n: p.data.cpu() for n, p in model.named_parameters() if p.requires_grad
@@ -89,7 +96,9 @@ def _save_checkpoint(
         "optimizer_state_dict": optimizer.state_dict(),
         "metrics": metrics,
     }
-    torch.save(trainable_state, path)
+    if model_config_dict is not None:
+        checkpoint["model_config_dict"] = model_config_dict
+    torch.save(checkpoint, path)
 
 
 def main():
@@ -398,6 +407,7 @@ def main():
                             "val_threshold": best_thr,
                         },
                         os.path.join(checkpoint_dir, "best.pt"),
+                        model_config_dict=model_cfg.to_dict(),
                     )
                     cfg.model.to_yaml(os.path.join(checkpoint_dir, "best.config.yaml"))
                     print(f"  \u2b50 New best checkpoint (epoch {epoch})")
@@ -434,6 +444,7 @@ def main():
                         global_step,
                         {"train_loss": avg_train_loss},
                         ckpt_path,
+                        model_config_dict=model_cfg.to_dict(),
                     )
 
         # ------------------------------------------------------------------ #
@@ -495,6 +506,7 @@ def main():
                 "test_f1": test_f1,
             },
             os.path.join(final_dir, "final.pt"),
+            model_config_dict=model_cfg.to_dict(),
         )
         cfg.model.to_yaml(os.path.join(final_dir, "final.config.yaml"))
 

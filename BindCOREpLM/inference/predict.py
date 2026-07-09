@@ -4,8 +4,19 @@ Inference script for BindCOREpLM.
 Takes a trained model checkpoint, a LIP-format file, and produces a CSV
 with per-residue probabilities and binary predictions.
 
+The checkpoint can be a **self-contained** ``.pt`` file (with the model
+config embedded inside it) — in that case ``--config`` is not needed.
+For backward compatibility with checkpoints that do *not* contain an
+embedded config, the ``--config`` argument is still supported.
+
 Usage
 -----
+    # Self-contained checkpoint (config embedded)
+    python -m BindCOREpLM.inference.predict --checkpoint outputs/run1/best.pt \
+                            --input data/LIP_dataset/test.txt \
+                            --output predictions.csv
+
+    # Legacy mode (separate config file)
     python -m BindCOREpLM.inference.predict --checkpoint outputs/run1/best.pt \
                             --config outputs/run1/best.config.yaml \
                             --input data/LIP_dataset/test.txt \
@@ -23,9 +34,55 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from BindCOREpLM.config import ExperimentConfig
+from BindCOREpLM.config import ESMCFineTuneConfig
 from BindCOREpLM.data.dataset import LIPDataset, LIPCollator
 from BindCOREpLM.models.model import ESMCResidueBindingModel
+
+
+def _load_config_from_checkpoint(checkpoint_path: str) -> ESMCFineTuneConfig:
+    """Reconstruct model config from the embedded ``model_config_dict``."""
+    raw = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    config_dict = raw.get("model_config_dict")
+    if config_dict is None:
+        raise ValueError(
+            f"No embedded config found in {checkpoint_path}. "
+            "Either use a checkpoint trained with the updated trainer, "
+            "or provide --config manually."
+        )
+    return ESMCFineTuneConfig(**config_dict)
+
+
+def _load_state_into_model(
+    model: ESMCResidueBindingModel,
+    checkpoint_path: str,
+    device: torch.device,
+) -> float | None:
+    """Load trainable weights from checkpoint; return saved binary threshold.
+
+    Handles both new-style checkpoints (nested dict with ``model_state_dict``)
+    and legacy flat checkpoints (just a flat dict of parameter tensors).
+    """
+    state = torch.load(checkpoint_path, map_location="cpu")
+
+    # New-style checkpoint (nested dict with "model_state_dict" key)
+    if "model_state_dict" in state:
+        weights = state["model_state_dict"]
+        threshold_tensor = weights.pop("_binary_threshold", None)
+    else:
+        # Legacy flat checkpoint (just a dict of parameter tensors)
+        weights = state
+        threshold_tensor = weights.pop("_binary_threshold", None)
+
+    own_state = {n: p for n, p in model.named_parameters() if p.requires_grad}
+    for name, param in weights.items():
+        if name in own_state:
+            own_state[name].data.copy_(param)
+        else:
+            print(f"  Warning: parameter {name!r} not found in model, skipping.")
+
+    if threshold_tensor is not None:
+        return float(threshold_tensor.item())
+    return None
 
 
 def main():
@@ -41,8 +98,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        required=True,
-        help="Path to model config YAML file",
+        default=None,
+        help="Path to model config YAML file (optional if checkpoint has embedded config)",
     )
     parser.add_argument(
         "--input",
@@ -76,7 +133,9 @@ def main():
     )
     args = parser.parse_args()
 
+    # ------------------------------------------------------------------ #
     # Device
+    # ------------------------------------------------------------------ #
     if args.device == "auto":
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -88,36 +147,46 @@ def main():
         device = torch.device(args.device)
     print(f"Using device: {device}")
 
-    # Load config and model
-    cfg = ExperimentConfig.from_yaml(args.config)
-    model = ESMCResidueBindingModel(cfg.model).to(device)
+    # ------------------------------------------------------------------ #
+    # Config  (from checkpoint or separate YAML)
+    # ------------------------------------------------------------------ #
+    if args.config is not None:
+        # Legacy mode: load config from separate YAML file
+        from BindCOREpLM.config import ExperimentConfig
+
+        cfg = ExperimentConfig.from_yaml(args.config)
+        model_cfg = cfg.model
+        print(f"Using config from: {args.config}")
+    else:
+        # Self-contained mode: config is embedded in the checkpoint
+        model_cfg = _load_config_from_checkpoint(args.checkpoint)
+        print(f"Using embedded config from checkpoint")
+
+    # ------------------------------------------------------------------ #
+    # Model
+    # ------------------------------------------------------------------ #
+    model = ESMCResidueBindingModel(model_cfg)
+    saved_threshold = _load_state_into_model(model, args.checkpoint, device)
+    model.to(device)
     model.eval()
-
-    # Load checkpoint
-    print(f"Loading checkpoint: {args.checkpoint}")
-    state = torch.load(args.checkpoint, map_location=device)
-    threshold = state.pop("_binary_threshold", None)
-
-    own_state = {n: p for n, p in model.named_parameters() if p.requires_grad}
-    for name, param in state.items():
-        if name in own_state:
-            own_state[name].data.copy_(param)
 
     if args.threshold is not None:
         model.binary_threshold = args.threshold
         print(f"Using provided threshold: {args.threshold}")
-    elif threshold is not None:
-        model.binary_threshold = float(threshold.item())
+    elif saved_threshold is not None:
+        model.binary_threshold = saved_threshold
         print(f"Using checkpoint threshold: {model.binary_threshold:.4f}")
     else:
         print(f"Using default threshold: {model.binary_threshold}")
 
+    # ------------------------------------------------------------------ #
     # Data
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model.model_name_or_path)
+    # ------------------------------------------------------------------ #
+    tokenizer = AutoTokenizer.from_pretrained(model_cfg.model_name_or_path)
     dataset = LIPDataset([args.input])
     collator = LIPCollator(
         tokenizer=tokenizer,
-        max_length=cfg.model.max_seq_length,
+        max_length=model_cfg.max_seq_length,
     )
     loader = DataLoader(
         dataset,
@@ -143,12 +212,14 @@ def main():
                 seq_len = attention_mask[i].sum().item()
                 probs = probabilities[i, :seq_len].cpu().tolist()
                 bins = binary[i, :seq_len].cpu().tolist()
-                results.append({
-                    "protein_id": pid,
-                    "length": seq_len,
-                    "probabilities": ",".join(f"{p:.6f}" for p in probs),
-                    "binary_predictions": ",".join(str(b) for b in bins),
-                })
+                results.append(
+                    {
+                        "protein_id": pid,
+                        "length": seq_len,
+                        "probabilities": ",".join(f"{p:.6f}" for p in probs),
+                        "binary_predictions": ",".join(str(b) for b in bins),
+                    }
+                )
 
     # Save CSV
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
