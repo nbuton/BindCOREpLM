@@ -17,9 +17,51 @@ Example
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import yaml
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+
+
+def _parse_layer_indices(
+    value: Optional[Union[List[int], str]],
+) -> Optional[List[int]]:
+    """Accept ``layer_indices`` as either a list of ints or a range string.
+
+    Range string formats (inclusive-inclusive):
+      ``"64-79"``  → ``[64, 65, ..., 79]``
+      ``"0-35"``   → ``[0, 1, ..., 35]``
+      ``"64"``     → ``[64]``
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [int(v) for v in value]
+    if isinstance(value, str):
+        parts = value.split("-")
+        if len(parts) == 1:
+            return [int(parts[0])]
+        if len(parts) == 2:
+            start, end = int(parts[0]), int(parts[1])
+            if start > end:
+                raise ValueError(
+                    f"Invalid layer_indices range: {value!r}. "
+                    f"Start ({start}) must be <= end ({end})."
+                )
+            return list(range(start, end + 1))
+        raise ValueError(
+            f"Invalid layer_indices string: {value!r}. "
+            f'Use a single int ("5"), inclusive range ("5-11"), '
+            f"or a YAML list ([5, 6, 7, 11])."
+        )
+    raise TypeError(
+        f"layer_indices must be a list of ints, a range string, or None; "
+        f"got {type(value).__name__}: {value!r}"
+    )
+
 
 # --------------------------------------------------------------------------- #
 # Sub-configs
@@ -62,7 +104,19 @@ class LoRAConfig:
     # to the last N layers (e.g. list(range(30, 36)) for a 36-layer model)
     # is a reasonable way to cut trainable params further and reduce
     # overfitting risk.
-    layer_indices: Optional[List[int]] = None
+    #
+    # In YAML you can write either a list:
+    #   layer_indices: [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79]
+    #
+    # …or a compact inclusive-inclusive range string:
+    #   layer_indices: "64-79"
+    #
+    # For a single layer: "64" or [64].
+    layer_indices: Optional[Union[List[int], str]] = None
+
+    def __post_init__(self):
+        if self.layer_indices is not None:
+            self.layer_indices = _parse_layer_indices(self.layer_indices)
 
 
 @dataclass
