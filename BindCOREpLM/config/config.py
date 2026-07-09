@@ -40,10 +40,22 @@ class LoRAConfig:
     # (the frozen base path is untouched). Independent from the head
     # dropout below.
     dropout: float = 0.05
-    # Which linear submodules to wrap. Names are matched by suffix, so
-    # this works whether the underlying model calls them "k_proj"/"v_proj",
-    # "key"/"value", etc. Check `list_linear_module_names(model)` in
-    # lora.py if your checkpoint uses different names.
+    # Which submodules to wrap with LoRA adapters.  Names are matched by
+    # suffix (the last dot-separated segment), so they work regardless of
+    # the full module path.
+    #
+    # Available targets for ESM-C (see lora.py docstring for details):
+    #   "layernorm_qkv"  — fused QKV (default; K/V slices only)
+    #   "ffn"            — fused SwiGLU MLP (both fc1 and fc2)
+    #   "out_proj"       — attention output projection (nn.Linear)
+    #
+    # For standard HF models with separate K/V projections (e.g. BERT,
+    # LLaMA), use "k_proj" and/or "v_proj" instead — but note that
+    # ESM-C uses fused QKV and has no such separate modules.
+    #
+    # Check `list_linear_module_names(model)`,
+    # `list_fused_qkv_module_names(model)` and
+    # `list_fused_ffn_module_names(model)` in lora.py for your checkpoint.
     target_modules: List[str] = field(default_factory=lambda: ["layernorm_qkv"])
     # Restrict LoRA to a subset of transformer layers (0-indexed).
     # None = apply to every layer. With only 800 proteins, restricting

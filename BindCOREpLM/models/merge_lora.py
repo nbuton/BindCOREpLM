@@ -27,7 +27,7 @@ import torch.nn as nn
 from transformers import AutoTokenizer
 
 from BindCOREpLM.config import ExperimentConfig
-from BindCOREpLM.models.lora import LoRALinear, LoRAFusedQKV
+from BindCOREpLM.models.lora import LoRALinear, LoRAFusedQKV, LoRAFusedMLP
 from BindCOREpLM.models.model import ESMCResidueBindingModel
 
 
@@ -37,7 +37,7 @@ def merge_lora_into_base(model: nn.Module) -> None:
     fused-QKV module) and the LoRA contributions baked into the weights.
     """
     # Collect all replaced names first so we don't mutate during iteration
-    replacements = {}  # module_name -> new_module
+    replacements: dict[str, nn.Module] = {}  # module_name -> new_module
 
     for name, module in model.named_modules():
         # ---- Standard LoRALinear ----
@@ -80,6 +80,25 @@ def merge_lora_into_base(model: nn.Module) -> None:
 
             # The LoRA wrapper is no longer needed; replace it with the
             # original fused module (whose weight is now updated).
+            replacements[name] = fused
+
+        # ---- Fused MLP wrapper (ESM-C style FFN) ----
+        elif isinstance(module, LoRAFusedMLP):
+            fused = module.fused_mlp  # original _PyTorchLayerNormMLP
+
+            # Merge LoRA into fc1_weight
+            delta_fc1 = module.scaling * (module.lora_B_fc1 @ module.lora_A_fc1)
+            fused.fc1_weight.data = (
+                fused.fc1_weight.data.to(torch.float32) + delta_fc1.to(torch.float32)
+            ).to(fused.fc1_weight.dtype)
+
+            # Merge LoRA into fc2_weight
+            delta_fc2 = module.scaling * (module.lora_B_fc2 @ module.lora_A_fc2)
+            fused.fc2_weight.data = (
+                fused.fc2_weight.data.to(torch.float32) + delta_fc2.to(torch.float32)
+            ).to(fused.fc2_weight.dtype)
+
+            # Replace wrapper with the original (now-merged) module
             replacements[name] = fused
 
     # Apply the replacements (walk from leaf to root to keep things safe)
