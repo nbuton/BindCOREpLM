@@ -202,12 +202,13 @@ def main():
         print(f"Valid samples: {len(valid_ds)}")
     print(f"Test samples:  {len(test_ds)}")
 
-    # Compute pos_weight if not set
+    # Compute pos_weight if not set — update train_cfg so it's logged accurately
     if train_cfg.pos_weight is not None:
         pos_weight = torch.tensor(train_cfg.pos_weight, device=device)
     else:
         pw = train_ds.pos_weight()
         pos_weight = torch.tensor(pw, device=device)
+        train_cfg.pos_weight = pw
         print(f"Computed pos_weight = {pw:.3f}")
 
     # ------------------------------------------------------------------ #
@@ -268,11 +269,10 @@ def main():
         run_id = run.info.run_id
         print(f"MLflow run ID: {run_id}")
 
-        # Log config
+        # Log config  (pos_weight is now included in cfg.training.to_dict())
         mlflow.log_params(cfg.model.to_dict())
         mlflow.log_params(cfg.training.to_dict())
         mlflow.log_param("device", device.type)
-        mlflow.log_param("pos_weight", pos_weight.item())
 
         # ------------------------------------------------------------------ #
         # Training loop
