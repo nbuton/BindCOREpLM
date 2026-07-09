@@ -109,13 +109,17 @@ class ESMCFineTuneConfig:
     max_seq_length: int = 1024
 
     def __post_init__(self):
-        # Allow plain dicts to be passed in (e.g. straight from yaml.safe_load)
-        if isinstance(self.lora, dict):
-            self.lora = LoRAConfig(**self.lora)
-        if isinstance(self.cnn, dict):
-            self.cnn = CNNHeadConfig(**self.cnn)
-        if isinstance(self.mlp, dict):
-            self.mlp = MLPHeadConfig(**self.mlp)
+        # Allow plain dicts to be passed in (e.g. straight from yaml.safe_load).
+        # Using getattr/setattr so Pylint sees the value as `Any` and can
+        # narrow to `dict` after the isinstance check (avoids E1134).
+        for attr, cls in (
+            ("lora", LoRAConfig),
+            ("cnn", CNNHeadConfig),
+            ("mlp", MLPHeadConfig),
+        ):
+            val = getattr(self, attr)
+            if isinstance(val, dict):
+                setattr(self, attr, cls(**val))  # pylint: disable=not-a-mapping
         if self.precision not in ("fp32", "fp16", "bf16"):
             raise ValueError(
                 f"precision must be one of fp32/fp16/bf16, got {self.precision!r}"
@@ -240,14 +244,17 @@ class TrainingConfig:
     early_stopping_patience: Optional[int] = 5
 
     def __post_init__(self):
-        if isinstance(self.data, dict):
-            self.data = DataConfig(**self.data)
-        if isinstance(self.scheduler, dict):
-            self.scheduler = SchedulerConfig(**self.scheduler)
+        for attr, cls in (("data", DataConfig), ("scheduler", SchedulerConfig)):
+            val = getattr(self, attr)
+            if isinstance(val, dict):
+                setattr(self, attr, cls(**val))  # pylint: disable=not-a-mapping
         if self.best_metric not in ("loss", "f1"):
             raise ValueError(
                 f"best_metric must be 'loss' or 'f1', got {self.best_metric!r}"
             )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -260,10 +267,10 @@ class ExperimentConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
 
     def __post_init__(self):
-        if isinstance(self.model, dict):
-            self.model = ESMCFineTuneConfig(**self.model)
-        if isinstance(self.training, dict):
-            self.training = TrainingConfig(**self.training)
+        for attr, cls in (("model", ESMCFineTuneConfig), ("training", TrainingConfig)):
+            val = getattr(self, attr)
+            if isinstance(val, dict):
+                setattr(self, attr, cls(**val))  # pylint: disable=not-a-mapping
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":
